@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b1a">
+<title>Break the Firewall | KARMA | SYSTEM ERROR</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  :root{ --accent:#7fb2ff; }
+  #bg{ object-fit:cover; }
+  .shots{ display:flex; gap:.5em; }
+  .shot{ width:.5em; height:.5em; border-radius:50%; background:var(--accent); box-shadow:0 0 .5em var(--accent); }
+  .shot.off{ background:#26305a; box-shadow:none; }
+  .goal{ font-family:var(--px); font-size:.62em; }
+  #stage{ cursor:crosshair; }
+</style>
+</head>
+<body>
+<div id="backdrop" style="background-image:url('bg-karma-b.webp')"></div>
+<div class="stage" id="stage">
+  <img id="bg" class="fill" src="bg-karma-b.webp" alt="">
+  <canvas id="c" class="fill" width="360" height="640"></canvas>
+  <div class="hud">
+    <div class="avatar"><img id="me" alt=""></div>
+    <div class="stats">
+      <div class="row"><span class="lab">BREACH</span><span id="hits">0</span><span class="goal" id="need">/ 2</span></div>
+      <div class="row"><span class="lab">COINS</span><span id="coins">0</span></div>
+      <div class="shots" id="shots" aria-label="Shots left"></div>
+    </div>
+    <a class="menu" href="index.html#select">Menu</a>
+  </div>
+</div>
+
+<script src="common.js"></script>
+<script>
+(() => {
+'use strict';
+const { NAMES, sfx } = SKZ;
+const me = SKZ.me || 'bangchan';
+const W = 360, H = 640;
+const PANEL = { x0:20, y0:180, x1:341, y1:344 };       // the glowing wall in the background art
+const BALL = { x:W / 2, y:566 };
+const FLY = 760;                                       // shot speed, px per second
+const LEVELS = [
+  { need:2, speed:105, r:24, wave:0 },
+  { need:3, speed:150, r:22, wave:0 },
+  { need:3, speed:190, r:20, wave:1 },
+  { need:4, speed:235, r:19, wave:1 },
+  { need:4, speed:285, r:17, wave:2 }
+];
+const SHOTS = 5;
+
+const stage = document.getElementById('stage');
+const ctx = document.getElementById('c').getContext('2d');
+const $ = s => document.querySelector(s);
+$('#me').src = SKZ.portrait('karma', me); $('#me').alt = NAMES[me];
+addEventListener('resize', () => SKZ.fit(stage)); SKZ.fit(stage);
+const meter = SKZ.meterUI(stage);
+const face = new Image(); face.src = SKZ.portrait('karma', me);
+
+const rand = (a, b) => a + Math.random() * (b - a);
+const G = {
+  state:'intro', level:0, shots:SHOTS, hits:0, coins:0, t:0,
+  target:{ x:180, y:262, dir:1, speed:100, r:24, base:262 },
+  ball:{ x:BALL.x, y:BALL.y, flying:false, tx:0, ty:0, sx:0, sy:0, p:0, dur:0, ready:true },
+  aim:{ on:false, x:0, y:0 },
+  fx:[], cracks:[], glow:0
+};
+const cfg = () => LEVELS[Math.min(G.level, LEVELS.length - 1)];
+
+function hud(){
+  $('#hits').textContent = G.hits;
+  $('#need').textContent = '/ ' + cfg().need;
+  $('#coins').textContent = G.coins;
+  $('#shots').innerHTML = Array.from({ length:SHOTS }, (_, i) => `<span class="shot${i < G.shots ? '' : ' off'}"></span>`).join('');
+}
+function newRound(){
+  const c = cfg();
+  G.shots = SHOTS; G.hits = 0; G.cracks = []; G.fx = [];
+  Object.assign(G.target, { r:c.r, speed:c.speed, dir:Math.random() < .5 ? -1 : 1, x:rand(80, 280), base:262 });
+  Object.assign(G.ball, { x:BALL.x, y:BALL.y, flying:false, ready:true });
+  hud();
+}
+function begin(){ SKZ.hideOverlay(stage); newRound(); G.state = 'play'; }
+
+/* ---------- input: press, drag, release. Where you let go is where the shot lands ---------- */
+function pt(e){ const r = stage.getBoundingClientRect(); return { x:(e.clientX - r.left) / r.width * W, y:(e.clientY - r.top) / r.height * H }; }
+stage.addEventListener('pointerdown', e => {
+  if(G.state !== 'play' || !G.ball.ready || e.target.closest('.menu,.overlay')) return;
+  const p = pt(e); if(p.y < 330) return;
+  G.aim.on = true; G.aim.x = p.x; G.aim.y = p.y;
+  stage.setPointerCapture && stage.setPointerCapture(e.pointerId);
+});
+stage.addEventListener('pointermove', e => { if(G.aim.on){ const p = pt(e); G.aim.x = p.x; G.aim.y = p.y; } });
+function release(e){
+  if(!G.aim.on) return;
+  G.aim.on = false;
+  const p = e ? pt(e) : { x:G.aim.x, y:G.aim.y };
+  if(Math.hypot(p.x - BALL.x, p.y - BALL.y) < 40 || p.y > BALL.y - 20) return;    // too short, or not upward
+  fire(p.x, Math.max(120, p.y));
+}
+stage.addEventListener('pointerup', release);
+stage.addEventListener('pointercancel', () => { G.aim.on = false; });
+
+function fire(tx, ty){
+  const b = G.ball;
+  b.flying = true; b.ready = false; b.sx = BALL.x; b.sy = BALL.y; b.tx = tx; b.ty = ty; b.p = 0;
+  b.dur = Math.hypot(tx - b.sx, ty - b.sy) / FLY;
+  G.shots--; hud(); sfx.tap(); SKZ.beep(880, .09, .03);
+}
+function land(){
+  const b = G.ball, t = G.target;
+  b.flying = false;
+  const d = Math.hypot(b.tx - t.x, b.ty - t.y);
+  const inWall = b.tx > PANEL.x0 && b.tx < PANEL.x1 && b.ty > PANEL.y0 && b.ty < PANEL.y1;
+  if(d < t.r + 5){
+    G.hits++; G.coins += 25 + (d < t.r * .35 ? 15 : 0);
+    const bull = d < t.r * .35;
+    SKZ.popText(stage, bull ? 'DEAD CENTER' : 'BREACH', t.x, t.y - 26, bull ? '#fff36e' : '#7fe9ff');
+    for(let i = 0; i < 7; i++){ const a = rand(0, 6.28), l = rand(20, 60); G.cracks.push({ x:t.x, y:t.y, ex:t.x + Math.cos(a) * l, ey:t.y + Math.sin(a) * l, life:1 }); }
+    G.fx.push({ x:t.x, y:t.y, r:6, life:1, c:'#7fe9ff' });
+    G.glow = 1; sfx.good(); SKZ.shake(stage);
+    t.speed *= 1.08;                                    // faster and faster
+    const bump1 = SKZ.meter.add(2); meter.refresh(); SKZ.pointsBanner(stage, bump1.earned);
+  }else{
+    SKZ.popText(stage, 'BLOCKED', b.tx, Math.min(b.ty, 350) - 8, '#ff7a90');
+    G.fx.push({ x:b.tx, y:b.ty, r:4, life:1, c:inWall ? '#ff5a8a' : '#8a93c2' });
+    sfx.bad();
+  }
+  hud();
+  setTimeout(nextShot, 420);
+}
+function nextShot(){
+  if(G.state !== 'play') return;
+  if(G.hits >= cfg().need){ return roundEnd(true); }
+  if(G.shots <= 0){ return roundEnd(false); }
+  Object.assign(G.ball, { x:BALL.x, y:BALL.y, ready:true });
+}
+function roundEnd(ok){
+  G.state = 'pause';
+  const last = G.level >= LEVELS.length - 1;
+  if(ok){
+    sfx.win(); const bump2 = SKZ.meter.add(10); meter.refresh(); SKZ.pointsBanner(stage, bump2.earned);
+    setTimeout(() => {
+      if(last) SKZ.overlay(stage, { title:'Firewall down', lines:['You broke through all five walls.', 'The SYSTEM meter is climbing.'],
+        buttons:[{ label:'Play again', primary:true, fn:() => { G.level = 0; G.coins = 0; begin(); } }, { label:'Menu', href:'index.html#select', small:true }] });
+      else SKZ.overlay(stage, { title:'Breach', lines:[G.hits + ' of ' + SHOTS + ' shots landed.', 'The next wall is faster.'],
+        buttons:[{ label:'Next wall', primary:true, fn:() => { G.level++; begin(); } }] });
+    }, 600);
+  }else{
+    sfx.lose();
+    setTimeout(() => SKZ.overlay(stage, { title:'Blocked', lines:['Only ' + G.hits + ' of ' + cfg().need + ' needed landed.', 'Lead the weak point. It keeps moving.'],
+      buttons:[{ label:'Try again', primary:true, fn:begin }, { label:'Menu', href:'index.html#select', small:true }] }), 600);
+  }
+}
+
+/* ---------- simulation ---------- */
+function step(dt){
+  G.t += dt;
+  const t = G.target, c = cfg();
+  if(G.state === 'play' || G.ball.flying){
+    const lo = PANEL.x0 + t.r + 12, hi = PANEL.x1 - t.r - 12;
+    t.x += t.dir * t.speed * dt;
+    if(t.x < lo){ t.x = lo; t.dir = 1; } else if(t.x > hi){ t.x = hi; t.dir = -1; }
+    if(c.wave) t.y = t.base + Math.sin(G.t * (c.wave === 2 ? 3.4 : 2.2)) * (c.wave === 2 ? 56 : 40);
+    else t.y = t.base;
+    if(c.wave === 2 && Math.random() < dt * .35) t.dir *= -1;      // sometimes changes its mind
+  }
+  const b = G.ball;
+  if(b.flying){
+    b.p += dt / b.dur;
+    const k = Math.min(1, b.p);
+    b.x = b.sx + (b.tx - b.sx) * k; b.y = b.sy + (b.ty - b.sy) * k;
+    if(b.p >= 1) land();
+  }
+  G.glow = Math.max(0, G.glow - dt * 1.6);
+  G.fx.forEach(f => { f.r += dt * 90; f.life -= dt * 2.2; }); G.fx = G.fx.filter(f => f.life > 0);
+  G.cracks.forEach(k => k.life = Math.min(1, k.life)); 
+}
+
+/* ---------- drawing ---------- */
+function diamond(x, y, r, fill, stroke){
+  ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.closePath();
+  if(fill){ ctx.fillStyle = fill; ctx.fill(); }
+  if(stroke){ ctx.strokeStyle = stroke; ctx.lineWidth = 3; ctx.stroke(); }
+}
+function orb(x, y, r, scale){
+  const rr = r * scale;
+  ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.ellipse(x, BALL.y + 20, rr * .9, rr * .3, 0, 0, 6.28); ctx.fill();
+  const g = ctx.createRadialGradient(x - rr * .3, y - rr * .3, 2, x, y, rr * 1.25);
+  g.addColorStop(0, '#dff6ff'); g.addColorStop(1, '#3b6dff');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, rr, 0, 6.28); ctx.fill();
+  if(face.complete && face.naturalWidth){
+    ctx.save(); ctx.beginPath(); ctx.arc(x, y, rr - 3, 0, 6.28); ctx.clip();
+    const s = (rr * 2) / face.naturalWidth * 1.15;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(face, x - face.naturalWidth * s / 2, y - rr - 2, face.naturalWidth * s, face.naturalHeight * s);
+    ctx.restore();
+  }
+  ctx.strokeStyle = '#eaf6ff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, rr, 0, 6.28); ctx.stroke();
+}
+function draw(){
+  ctx.clearRect(0, 0, W, H);
+  // wall glow when it takes a hit
+  if(G.glow > 0){ ctx.fillStyle = `rgba(127,233,255,${G.glow * .25})`; ctx.fillRect(PANEL.x0, PANEL.y0, PANEL.x1 - PANEL.x0, PANEL.y1 - PANEL.y0); }
+  // cracks
+  ctx.strokeStyle = 'rgba(234,246,255,.85)'; ctx.lineWidth = 2;
+  G.cracks.forEach(k => { ctx.beginPath(); ctx.moveTo(k.x, k.y); ctx.lineTo((k.x + k.ex) / 2 + 4, (k.y + k.ey) / 2 - 3); ctx.lineTo(k.ex, k.ey); ctx.stroke(); });
+
+  // weak point
+  const t = G.target, pulse = 1 + Math.sin(G.t * 8) * .08;
+  ctx.globalAlpha = .25; diamond(t.x, t.y, t.r * 1.5 * pulse, '#ff5a8a'); ctx.globalAlpha = 1;
+  diamond(t.x, t.y, t.r * pulse, 'rgba(255,90,138,.35)', '#ff5a8a');
+  diamond(t.x, t.y, t.r * .45, '#fff');
+
+  // aim line and crosshair
+  if(G.aim.on){
+    ctx.strokeStyle = 'rgba(234,246,255,.8)'; ctx.lineWidth = 2; ctx.setLineDash([6, 6]);
+    ctx.beginPath(); ctx.moveTo(BALL.x, BALL.y); ctx.lineTo(G.aim.x, Math.max(120, G.aim.y)); ctx.stroke(); ctx.setLineDash([]);
+    const ax = G.aim.x, ay = Math.max(120, G.aim.y);
+    ctx.strokeStyle = '#fff36e'; ctx.beginPath(); ctx.arc(ax, ay, 12, 0, 6.28); ctx.moveTo(ax - 18, ay); ctx.lineTo(ax - 6, ay); ctx.moveTo(ax + 6, ay); ctx.lineTo(ax + 18, ay); ctx.moveTo(ax, ay - 18); ctx.lineTo(ax, ay - 6); ctx.moveTo(ax, ay + 6); ctx.lineTo(ax, ay + 18); ctx.stroke();
+  }
+  // impacts
+  G.fx.forEach(f => { ctx.globalAlpha = Math.max(0, f.life); ctx.strokeStyle = f.c; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, 6.28); ctx.stroke(); ctx.globalAlpha = 1; });
+  // shot / ball
+  const b = G.ball;
+  if(b.flying || b.ready) orb(b.x, b.y, 17, b.flying ? 1 - b.p * .45 : 1);
+}
+SKZ.loop(dt => { step(dt); draw(); });
+
+/* ---------- intro ---------- */
+hud(); meter.refresh();
+SKZ.overlay(stage, { title:'Break the Firewall', lines:['Swipe up from the orb to fire.', 'Where your swipe ends is where the shot lands.', 'The weak point keeps moving. Lead it.', 'Land 2 of 5 to breach the first wall.'],
+  buttons:[{ label:'Start', primary:true, fn:begin }, { label:'Menu', href:'index.html#select', small:true }] });
+
+if(SKZ.debug) window.__dbg = { G, cfg };
+})();
+</script>
+  <script src="music.js"></script>
+</body>
+</html>

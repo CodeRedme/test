@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b1a">
+<title>Memory Stack | KARMA | SYSTEM ERROR</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  :root{ --accent:#b48bff; }
+  #bg{ object-fit:cover; }
+  .lives{ display:flex; gap:.4em; }
+  .life{ width:.75em; height:.75em; background:var(--accent); box-shadow:inset -.3em -.3em 0 rgba(0,0,0,.35); }
+  .life.off{ background:#26305a; box-shadow:none; }
+  .goal{ font-family:var(--px); font-size:.62em; color:var(--ink); }
+</style>
+</head>
+<body>
+<div id="backdrop" style="background-image:url('bg-karma-a.webp')"></div>
+<div class="stage" id="stage">
+  <img id="bg" class="fill" src="bg-karma-a.webp" alt="">
+  <div class="fill" style="background:linear-gradient(to bottom, rgba(5,9,22,.45), rgba(5,9,22,0) 30%)"></div>
+  <canvas id="c" class="fill" width="360" height="640"></canvas>
+  <div class="hud">
+    <div class="avatar"><img id="me" alt=""></div>
+    <div class="stats">
+      <div class="row"><span class="lab">STACK</span><span id="count">0</span><span class="goal" id="goal">/ 8</span></div>
+      <div class="row"><span class="lab">COINS</span><span id="coins">0</span></div>
+      <div class="lives" id="lives" aria-label="Lives"></div>
+    </div>
+    <a class="menu" href="index.html#select">Menu</a>
+  </div>
+</div>
+
+<script src="common.js"></script>
+<script>
+(() => {
+'use strict';
+const { NAMES, sfx } = SKZ;
+const me = SKZ.me || 'bangchan';
+const W = 360, H = 640, PAD_Y = 566, BW = 36, BH = 15, PAD_W = 70;
+const GOALS = [8, 10, 12, 14, 16];
+const stage = document.getElementById('stage');
+const ctx = document.getElementById('c').getContext('2d');
+ctx.imageSmoothingEnabled = false;
+const $ = s => document.querySelector(s);
+$('#me').src = SKZ.portrait('karma', me); $('#me').alt = NAMES[me];
+addEventListener('resize', () => SKZ.fit(stage)); SKZ.fit(stage);
+const meter = SKZ.meterUI(stage);
+
+const CHIP = [['#7fe9ff','#3aa8d6'], ['#8fb0ff','#4f6fd6'], ['#c39bff','#7c55d6']];
+const rand = (a, b) => a + Math.random() * (b - a);
+
+const G = {
+  state:'intro', level:0, lives:3, coins:0,
+  padX:W / 2, targetX:W / 2, padV:0, prevPadV:0,
+  blocks:[], frags:[], debris:[], texts:[],
+  sway:0, swayV:0, danger:0, spawnT:0, keys:{}, dangerFrames:0, t:0
+};
+
+function levelCfg(){
+  const L = G.level;
+  return { goal:GOALS[Math.min(L, GOALS.length - 1)], speed:1.7 + L * .32, gap:58 - L * 5, bad:.14 + L * .04 };
+}
+function drawLives(){
+  $('#lives').innerHTML = Array.from({ length:3 }, (_, i) => `<span class="life${i < G.lives ? '' : ' off'}"></span>`).join('');
+}
+function hud(){
+  $('#count').textContent = G.blocks.length;
+  $('#goal').textContent = '/ ' + levelCfg().goal;
+  $('#coins').textContent = G.coins;
+  drawLives();
+}
+
+/* ---------- geometry of the stack ---------- */
+const stackH = () => G.blocks.length * BH;
+function blockX(i){                          // absolute x of block i, includes the wobble
+  const b = G.blocks[i];
+  return G.padX + b.cum + G.sway * (i + 1) * .5;
+}
+const topX = () => G.blocks.length ? blockX(G.blocks.length - 1) : G.padX;
+const topY = () => PAD_Y - 6 - stackH();
+
+/* ---------- spawning + catching ---------- */
+function spawn(){
+  const cfg = levelCfg();
+  G.frags.push({ x:rand(36, W - 36), y:-16, vy:cfg.speed * rand(.9, 1.15), bad:Math.random() < cfg.bad, spin:rand(-1, 1) });
+}
+function catchFrag(f){
+  if(f.bad){
+    G.lives--; sfx.bad(); SKZ.shake(stage);
+    const drop = Math.min(2, G.blocks.length);
+    for(let i = 0; i < drop; i++) throwBlock(G.blocks.pop());
+    SKZ.popText(stage, 'CORRUPTED', f.x, topY() - 10, '#ff5a8a');
+    hud(); if(G.lives <= 0) gameOver();
+    return;
+  }
+  const off = (f.x - topX()) * .7;                       // blocks snap a little toward the stack
+  const prev = G.blocks.length ? G.blocks[G.blocks.length - 1].cum : 0;
+  G.blocks.push({ cum:prev + off, c:CHIP[G.blocks.length % 3] });
+  G.swayV += off * .012;
+  const perfect = Math.abs(off) < 3.5;
+  G.coins += perfect ? 15 : 10;
+  SKZ.popText(stage, perfect ? 'PERFECT' : '+10', f.x, topY() - 14, perfect ? '#7fe9ff' : '#fff');
+  sfx.tap(); if(perfect) setTimeout(() => SKZ.beep(988, .08), 60);
+  hud();
+  if(G.blocks.length >= levelCfg().goal) levelUp();
+}
+function throwBlock(b){
+  if(!b) return;
+  G.debris.push({ x:G.padX + b.cum, y:topY() + BH, vx:rand(-3, 3), vy:rand(-5, -2), r:0, vr:rand(-.2, .2), c:b.c });
+}
+function topple(){
+  sfx.thud(); SKZ.shake(stage);
+  G.blocks.forEach((b, i) => G.debris.push({ x:blockX(i), y:PAD_Y - 6 - i * BH, vx:rand(-4, 4), vy:rand(-6, -1), r:0, vr:rand(-.25, .25), c:b.c }));
+  G.blocks = []; G.sway = 0; G.swayV = 0; G.danger = 0; G.dangerFrames = 0;
+  G.lives--; hud(); SKZ.popText(stage, 'TOPPLED', G.padX, PAD_Y - 60, '#ff5a8a');
+  if(G.lives <= 0) gameOver();
+}
+
+/* ---------- flow ---------- */
+function resetRound(){
+  G.blocks = []; G.frags = []; G.debris = []; G.sway = 0; G.swayV = 0; G.danger = 0; G.dangerFrames = 0; G.spawnT = 40;
+}
+function begin(){
+  SKZ.hideOverlay(stage); resetRound(); hud(); G.state = 'play';
+}
+function levelUp(){
+  G.state = 'pause'; sfx.win();
+  meter.refresh(); const bump = SKZ.meter.add(10); meter.refresh(); SKZ.pointsBanner(stage, bump.earned);
+  const done = G.level >= GOALS.length - 1;
+  setTimeout(() => {
+    if(done){
+      SKZ.overlay(stage, { title:'Every memory saved', lines:['You stacked ' + levelCfg().goal + ' and held the line.', 'The SYSTEM meter is climbing.'],
+        buttons:[{ label:'Play again', primary:true, fn:() => { G.level = 0; G.lives = 3; G.coins = 0; begin(); } }, { label:'Menu', href:'index.html#select', small:true }] });
+    }else{
+      SKZ.overlay(stage, { title:'Level up', lines:['You stacked ' + levelCfg().goal + ' memories.', 'Get ready for level ' + (G.level + 2) + '.'],
+        buttons:[{ label:'Start level', primary:true, fn:() => { G.level++; begin(); } }] });
+    }
+  }, 700);
+}
+function gameOver(){
+  G.state = 'pause'; sfx.lose();
+  setTimeout(() => SKZ.overlay(stage, { title:'Stack lost', lines:['Level ' + (G.level + 1) + ' reached.', G.coins + ' coins.'],
+    buttons:[{ label:'Try again', primary:true, fn:() => { G.lives = 3; G.coins = 0; begin(); } }, { label:'Menu', href:'index.html#select', small:true }] }), 700);
+}
+
+/* ---------- input: mouse or finger moves the tray, arrow keys too ---------- */
+function pointerX(e){ const r = stage.getBoundingClientRect(); return (e.clientX - r.left) / r.width * W; }
+stage.addEventListener('pointermove', e => { if(G.state === 'play') G.targetX = pointerX(e); });
+stage.addEventListener('pointerdown', e => { if(G.state === 'play') G.targetX = pointerX(e); });
+addEventListener('keydown', e => { G.keys[e.key.toLowerCase()] = true; });
+addEventListener('keyup', e => { G.keys[e.key.toLowerCase()] = false; });
+
+/* ---------- simulation ---------- */
+function step(dt){
+  const f = dt * 60;
+  G.t += f;
+  if(G.keys.arrowleft || G.keys.a) G.targetX -= 6 * f;
+  if(G.keys.arrowright || G.keys.d) G.targetX += 6 * f;
+  G.targetX = Math.max(PAD_W / 2, Math.min(W - PAD_W / 2, G.targetX));
+
+  const px = G.padX;
+  G.padX += (G.targetX - G.padX) * Math.min(1, .3 * f);
+  G.prevPadV = G.padV; G.padV = (G.padX - px) / Math.max(f, .001);
+
+  // wobble: moving the tray fast shakes the stack, off-centre stacks lean
+  const n = G.blocks.length;
+  G.swayV += -(G.padV - G.prevPadV) * .03 * (1 + n * .1);
+  G.swayV += -G.sway * .05 * f;
+  G.swayV *= Math.pow(.94, f);
+  G.sway += G.swayV * f;
+  let com = 0; G.blocks.forEach(b => com += b.cum); com = n ? com / n : 0;
+  G.danger = Math.max(Math.abs(com) / 30, Math.abs(G.sway) * n * .5 / 34);
+  if(G.danger > 1) G.dangerFrames += f; else G.dangerFrames = Math.max(0, G.dangerFrames - f);
+  if(G.dangerFrames > 14 && G.state === 'play') topple();
+
+  if(G.state !== 'play') return;
+  const cfg = levelCfg();
+  G.spawnT -= f;
+  if(G.spawnT <= 0){ spawn(); G.spawnT = cfg.gap * rand(.75, 1.25); }
+  for(let i = G.frags.length - 1; i >= 0; i--){
+    const fr = G.frags[i];
+    const before = fr.y;
+    fr.y += fr.vy * f * 1.6;
+    const ty = topY();
+    if(before + BH <= ty && fr.y + BH >= ty && Math.abs(fr.x - topX()) < BW * .85){
+      G.frags.splice(i, 1); catchFrag(fr); if(G.state !== 'play') return; continue;
+    }
+    if(fr.y > H + 20) G.frags.splice(i, 1);
+  }
+}
+
+/* ---------- drawing ---------- */
+function chip(x, y, c, bad){
+  x = Math.round(x - BW / 2); y = Math.round(y - BH);
+  ctx.fillStyle = bad ? '#ff2d6f' : c[1]; ctx.fillRect(x, y, BW, BH);
+  ctx.fillStyle = bad ? '#ff8fb0' : c[0]; ctx.fillRect(x, y, BW, 4);
+  ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(x, y + BH - 3, BW, 3);
+  ctx.fillStyle = 'rgba(255,255,255,.55)';
+  if(bad){ ctx.fillRect(x + 4, y + 6, 8, 2); ctx.fillRect(x + 16, y + 9, 12, 2); ctx.fillStyle = '#1a0010'; ctx.fillRect(x + 12, y + 4, 4, 8); }
+  else{ ctx.fillRect(x + 5, y + 7, 3, 3); ctx.fillRect(x + BW - 8, y + 7, 3, 3); }
+}
+function draw(){
+  ctx.clearRect(0, 0, W, H);
+  // floor glow
+  const g = ctx.createLinearGradient(0, PAD_Y, 0, H);
+  g.addColorStop(0, 'rgba(120,150,255,.22)'); g.addColorStop(1, 'rgba(5,9,22,.8)');
+  ctx.fillStyle = g; ctx.fillRect(0, PAD_Y, W, H - PAD_Y);
+
+  // stack
+  const warn = G.danger > .7 && (Math.floor(G.t / 4) % 2 === 0);
+  G.blocks.forEach((b, i) => chip(blockX(i), PAD_Y - 6 - i * BH, b.c, false));
+  if(warn){ ctx.fillStyle = 'rgba(255,60,110,.28)'; ctx.fillRect(Math.round(G.padX - BW), Math.round(topY()), BW * 2, Math.round(stackH())); }
+
+  // tray
+  const px = Math.round(G.padX - PAD_W / 2);
+  ctx.fillStyle = '#26305a'; ctx.fillRect(px, PAD_Y - 6, PAD_W, 10);
+  ctx.fillStyle = '#7fb2ff'; ctx.fillRect(px, PAD_Y - 6, PAD_W, 3);
+  ctx.fillStyle = '#4fd8ff'; ctx.fillRect(px + 6, PAD_Y + 6, PAD_W - 12, 2);
+  ctx.fillStyle = 'rgba(79,216,255,.18)'; ctx.fillRect(px - 6, PAD_Y + 8, PAD_W + 12, 6);
+
+  // falling fragments
+  G.frags.forEach(f => {
+    chip(f.x, f.y + BH, CHIP[0], f.bad);
+    if(f.bad && (Math.floor(G.t / 3) % 2)){ ctx.fillStyle = 'rgba(255,45,111,.55)'; ctx.fillRect(Math.round(f.x - BW / 2 - 3), Math.round(f.y + 4), BW + 6, 3); }
+  });
+  // debris
+  for(let i = G.debris.length - 1; i >= 0; i--){
+    const d = G.debris[i];
+    d.vy += .35; d.x += d.vx; d.y += d.vy; d.r += d.vr;
+    ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(d.r); ctx.translate(-d.x, -d.y);
+    chip(d.x, d.y, d.c, false); ctx.restore();
+    if(d.y > H + 40) G.debris.splice(i, 1);
+  }
+}
+SKZ.loop(dt => { step(dt); draw(); });
+
+/* ---------- intro ---------- */
+hud(); meter.refresh();
+SKZ.overlay(stage, { title:'Memory Stack', lines:['Catch the memory fragments and stack them.', 'Move the tray with your finger, mouse or arrow keys.', 'Dodge the red corrupted ones. Keep the stack balanced.'],
+  buttons:[{ label:'Start', primary:true, fn:begin }, { label:'Menu', href:'index.html#select', small:true }] });
+
+if(SKZ.debug) window.__dbg = { G, levelCfg, topX, topY };
+})();
+</script>
+  <script src="music.js"></script>
+</body>
+</html>
