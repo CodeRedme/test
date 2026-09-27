@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b1a">
+<title>DO IT | SYSTEM ERROR</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  :root{ --accent:#ff8fc7; }
+  #bg{ object-fit:cover; }
+  #targets{ position:absolute; left:0; top:0; width:100%; height:100%; }
+  .tg{ position:absolute; transform:translate(-50%,-50%); padding:0; cursor:pointer;
+    filter:grayscale(1) contrast(.85) brightness(.84); transition:filter .2s; }
+  .tg::before{ content:""; position:absolute; inset:-.6em; }           /* bigger touch area */
+  .tg img{ display:block; width:100%; image-rendering:pixelated; pointer-events:none; }
+  .tg.found{ filter:drop-shadow(0 0 .5em var(--accent)); pointer-events:none; animation:found .55s steps(6) forwards; z-index:5; }
+  @keyframes found{ 0%{ transform:translate(-50%,-50%) scale(1); } 45%{ transform:translate(-50%,-70%) scale(1.9); } 100%{ transform:translate(-50%,-50%) scale(1.25); } }
+  #tint{ position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; mix-blend-mode:color; opacity:0; transition:opacity .8s steps(8);
+    background:linear-gradient(170deg,#ff8fc7 0%,#ffd27a 45%,#7fb2ff 100%); }
+  .ripple{ position:absolute; width:4em; height:4em; margin:-2em 0 0 -2em; border:.4em solid var(--accent); pointer-events:none; z-index:6; animation:ripple .7s steps(7) forwards; }
+  @keyframes ripple{ from{ transform:scale(.3); opacity:1; } to{ transform:scale(9); opacity:0; } }
+  .miss{ position:absolute; width:3em; height:3em; margin:-1.5em 0 0 -1.5em; pointer-events:none; z-index:6; color:#ff5a6e; font-family:var(--px); font-size:1.8em; text-align:center; line-height:1.7em; animation:missx .5s steps(5) forwards; }
+  @keyframes missx{ to{ transform:scale(1.6); opacity:0; } }
+  .hintring{ position:absolute; width:6em; height:6em; margin:-3em 0 0 -3em; border:.4em dashed var(--amber); border-radius:50%; pointer-events:none; z-index:6; animation:hint 1.3s steps(8) forwards; }
+  @keyframes hint{ 0%,100%{ opacity:0; transform:scale(1.6); } 25%,75%{ opacity:1; transform:scale(1); } }
+
+  .timer{ position:absolute; left:0; right:0; top:8.6em; height:1.1em; z-index:10; background:#0a1028; box-shadow:0 .2em 0 #000; }
+  .timer i{ display:block; height:100%; width:100%; background:#4fb4ff; }
+  .timer.low i{ background:#ff5a6e; animation:blink .5s steps(1) infinite; }
+  @keyframes blink{ 50%{ opacity:.45; } }
+
+  .dock{ position:absolute; left:0; right:0; bottom:0; z-index:10; display:flex; align-items:center; gap:.6em; padding:.8em .9em calc(.9em + env(safe-area-inset-bottom,0px));
+    background:linear-gradient(to top, rgba(5,9,22,.92), rgba(5,9,22,.7)); }
+  #slots{ flex:1; display:grid; grid-template-columns:repeat(7,1fr); gap:.4em; }
+  .slot{ aspect-ratio:1; background:#0a1028; box-shadow:0 0 0 .2em #3a4674; overflow:hidden; }
+  .slot img{ width:100%; height:100%; object-fit:contain; object-position:center bottom; image-rendering:pixelated; display:block; filter:grayscale(1) brightness(.32); transition:filter .3s; }
+  .slot.got{ box-shadow:0 0 0 .2em var(--accent); }
+  .slot.got img{ filter:none; }
+</style>
+</head>
+<body>
+<div id="backdrop" style="background-image:url('bg-doit.webp')"></div>
+<div class="stage" id="stage">
+  <img id="bg" class="fill" src="bg-doit.webp" alt="">
+  <canvas id="cBack" class="fill" width="360" height="640"></canvas>
+  <div id="targets"></div>
+  <canvas id="cFront" class="fill" width="360" height="640"></canvas>
+  <div id="tint"></div>
+
+  <div class="hud">
+    <div class="avatar"><img id="me" alt=""></div>
+    <div class="stats">
+      <div class="row"><span class="lab">LEVEL</span><span id="lvl">1</span></div>
+      <div class="row"><span class="lab">STARS</span><span id="stars">0</span></div>
+    </div>
+    <a class="menu" href="index.html#select">Menu</a>
+  </div>
+  <div class="timer" id="timer"><i id="tfill"></i></div>
+
+  <div class="dock">
+    <div id="slots" aria-label="Members to find"></div>
+    <button class="btn small" id="hint">Hint 3</button>
+  </div>
+</div>
+
+<script src="common.js"></script>
+<script>
+(() => {
+'use strict';
+const { IDS, NAMES, sfx } = SKZ;
+const me = SKZ.me || 'felix';
+const seekers = IDS.filter(i => i !== me);            // you play as one member, find the other 7
+const W = 360, H = 640;
+const AREA = { x0:26, x1:334, y0:112, y1:548 };       // where the crowd lives (clear of HUD and dock)
+const LEVELS = [
+  { npc:55,  time:50, size:36 },
+  { npc:95,  time:48, size:33 },
+  { npc:140, time:46, size:31 },
+  { npc:190, time:44, size:29 },
+  { npc:240, time:42, size:27 }
+];
+
+const stage = document.getElementById('stage');
+const $ = s => document.querySelector(s);
+const targetsEl = $('#targets');
+const cBack = $('#cBack').getContext('2d'), cFront = $('#cFront').getContext('2d');
+[cBack, cFront].forEach(c => c.imageSmoothingEnabled = false);
+
+$('#me').src = SKZ.portrait('doit', me);
+$('#me').alt = NAMES[me];
+function refit(){ SKZ.fit(stage); }
+addEventListener('resize', refit); refit();
+
+const S = { level:0, found:0, time:0, total:0, running:false, stars:0, hints:3, targets:[] };
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+
+/* ---------- little grayscale crowd, drawn as pixels ---------- */
+const SKIN = ['#c9cbd0','#b8bbc1','#d6d8dc','#a9acb3'];
+const BODY = ['#6d7078','#82858d','#5a5d65','#969aa2','#4a4d55'];
+const HAIR = ['#2b2d33','#3a3d44','#1c1d22','#55585f'];
+function npc(ctx, x, y, s){
+  const u = Math.max(2, Math.round(2 * s));
+  const bw = 6 * u, bh = 5 * u, hw = 6 * u, hh = 5 * u;
+  x = Math.round(x); y = Math.round(y);
+  ctx.fillStyle = 'rgba(0,0,0,.16)'; ctx.fillRect(x - bw / 2 - u, y - u / 2, bw + 2 * u, u);
+  ctx.fillStyle = pick(BODY); ctx.fillRect(x - bw / 2, y - bh, bw, bh);
+  ctx.fillStyle = pick(SKIN); ctx.fillRect(x - hw / 2, y - bh - hh, hw, hh);
+  const hat = Math.random() < .45;
+  ctx.fillStyle = pick(HAIR);
+  if(hat){
+    ctx.fillRect(x - hw / 2 - u, y - bh - hh - u * 1.5, hw + 2 * u, u);          // brim
+    ctx.fillRect(x - hw / 2 + u / 2, y - bh - hh - u * 3.5, hw - u, u * 2);      // crown
+  }else{
+    ctx.fillRect(x - hw / 2, y - bh - hh - u, hw, u * 2);
+  }
+  ctx.fillStyle = 'rgba(0,0,0,.55)';                                              // eyes
+  ctx.fillRect(x - u * 1.5, y - bh - hh / 2, u * .8, u * .8);
+  ctx.fillRect(x + u * .7, y - bh - hh / 2, u * .8, u * .8);
+}
+
+function placePoints(n, minD, area){
+  const pts = []; let tries = 0;
+  while(pts.length < n && tries++ < 4000){
+    const p = { x:rand(area.x0, area.x1), y:rand(area.y0, area.y1) };
+    if(pts.every(q => Math.hypot(q.x - p.x, q.y - p.y) >= minD)) pts.push(p);
+  }
+  return pts;
+}
+
+/* ---------- levels ---------- */
+function buildLevel(){
+  const L = LEVELS[S.level];
+  S.found = 0; S.time = L.time; S.total = L.time; S.hints = Math.max(S.hints, 0);
+  $('#lvl').textContent = (S.level + 1);
+  $('#stars').textContent = S.stars;
+  $('#tint').style.opacity = 0;
+  $('.timer').classList.remove('low'); $('#tfill').style.width = '100%';
+  cBack.clearRect(0, 0, W, H); cFront.clearRect(0, 0, W, H);
+  targetsEl.innerHTML = '';
+  $('#slots').innerHTML = '';
+
+  const spots = placePoints(seekers.length, 62, { x0:AREA.x0 + L.size / 2, x1:AREA.x1 - L.size / 2, y0:AREA.y0 + L.size / 2, y1:AREA.y1 - L.size / 2 });
+  const order = seekers.slice().sort(() => Math.random() - .5);
+
+  // crowd, painted back to front
+  const crowd = [];
+  const lo = 1.1 + S.level * .07, hi = 1.3 + S.level * .1;      // crowd gets bigger, so members blend in more
+  for(let i = 0; i < L.npc; i++) crowd.push({ x:rand(AREA.x0 - 6, AREA.x1 + 6), y:rand(AREA.y0 + 14, AREA.y1 + 14), s:rand(lo, hi) });
+  crowd.sort((a, b) => a.y - b.y).forEach(c => npc(cBack, c.x, c.y, c.s));
+  // a few in FRONT of each hidden member so they are only partly visible
+  spots.forEach(p => {
+    for(let k = 0; k < 2; k++) npc(cFront, p.x + rand(-L.size * .4, L.size * .4), p.y + L.size * rand(.42, .62), rand(lo, hi));
+  });
+
+  S.targets = order.map((id, i) => {
+    const b = document.createElement('button');
+    b.className = 'tg'; b.setAttribute('aria-label', 'Hidden member');
+    b.style.left = (spots[i].x / W * 100) + '%';
+    b.style.top = (spots[i].y / H * 100) + '%';
+    b.style.width = (L.size / W * 100) + '%';
+    b.innerHTML = `<img alt="" src="${SKZ.portrait('doit', id)}">`;
+    const t = { id, x:spots[i].x, y:spots[i].y, el:b, found:false };
+    b.addEventListener('click', ev => { ev.stopPropagation(); onFound(t); });
+    targetsEl.appendChild(b);
+    return t;
+  });
+  // dock shows who to look for, in colour once found
+  seekers.forEach(id => {
+    const d = document.createElement('div');
+    d.className = 'slot'; d.dataset.id = id; d.title = NAMES[id];
+    d.innerHTML = `<img alt="${NAMES[id]}" src="${SKZ.portrait('doit', id)}">`;
+    $('#slots').appendChild(d);
+  });
+  updateHint();
+}
+function updateHint(){
+  const b = $('#hint');
+  b.textContent = 'Hint ' + S.hints; b.disabled = S.hints <= 0 || !S.running;
+}
+
+function start(){
+  SKZ.hideOverlay(stage);
+  buildLevel();
+  S.running = true; updateHint();
+}
+
+/* ---------- play ---------- */
+function ripple(x, y, cls, txt){
+  const r = document.createElement('div');
+  r.className = cls;
+  r.style.left = (x / W * 100) + '%'; r.style.top = (y / H * 100) + '%';
+  if(txt) r.textContent = txt;
+  stage.appendChild(r);
+  setTimeout(() => r.remove(), 1400);
+}
+function onFound(t){
+  if(!S.running || t.found) return;
+  t.found = true; S.found++;
+  t.el.classList.add('found');
+  ripple(t.x, t.y, 'ripple');
+  SKZ.popText(stage, NAMES[t.id], t.x, t.y - 20, '#fff');
+  const slot = document.querySelector(`.slot[data-id="${t.id}"]`); if(slot) slot.classList.add('got');
+  $('#tint').style.opacity = (.62 * S.found / seekers.length).toFixed(2);
+  sfx.good();
+  if(S.found >= seekers.length) levelClear();
+}
+targetsEl.addEventListener('click', ev => {       // tapped the crowd, not a member
+  if(!S.running || ev.target !== targetsEl) return;
+  const r = stage.getBoundingClientRect();
+  const x = (ev.clientX - r.left) / r.width * W, y = (ev.clientY - r.top) / r.height * H;
+  S.time = Math.max(0, S.time - 1);
+  ripple(x, y, 'miss', '✕');
+  sfx.bad(); SKZ.shake(stage);
+  const bar = $('.timer'); bar.classList.add('low'); setTimeout(() => { if(S.time / S.total > .2) bar.classList.remove('low'); }, 400);
+});
+$('#hint').addEventListener('click', () => {
+  if(!S.running || S.hints <= 0) return;
+  const left = S.targets.filter(t => !t.found); if(!left.length) return;
+  const t = pick(left); S.hints--; updateHint(); sfx.tap();
+  ripple(t.x, t.y, 'hintring');
+});
+
+const loop = SKZ.loop(dt => {
+  if(!S.running) return;
+  S.time -= dt;
+  const f = Math.max(0, S.time / S.total);
+  $('#tfill').style.width = (f * 100) + '%';
+  $('.timer').classList.toggle('low', f < .2);
+  if(S.time <= 0){ S.running = false; updateHint(); timeUp(); }
+});
+
+function levelClear(){
+  S.running = false; updateHint();
+  const f = S.time / S.total;
+  const stars = f > .55 ? 3 : f > .28 ? 2 : 1;
+  S.stars += stars; $('#stars').textContent = S.stars;
+  sfx.win();
+  const last = S.level >= LEVELS.length - 1;
+  setTimeout(() => {
+    if(last){
+      SKZ.overlay(stage, { title:'Color is back', lines:['You found everyone in every crowd.', 'The SYSTEM lost this round.'], stars,
+        buttons:[{ label:'Play again', primary:true, fn:() => { S.level = 0; S.stars = 0; S.hints = 3; start(); } }, { label:'Menu', href:'index.html#select', small:true }] });
+    }else{
+      SKZ.overlay(stage, { title:'Level ' + (S.level + 1) + ' clear', lines:['Color is coming back.', 'The crowd gets bigger.'], stars,
+        buttons:[{ label:'Next level', primary:true, fn:() => { S.level++; start(); } }] });
+    }
+  }, 900);
+}
+function timeUp(){
+  sfx.lose();
+  SKZ.overlay(stage, { title:'Time is up', lines:['The SYSTEM drained the color again.', 'Try this level once more.'],
+    buttons:[{ label:'Try again', primary:true, fn:start }, { label:'Menu', href:'index.html#select', small:true }] });
+}
+
+/* ---------- intro ---------- */
+buildLevel();
+SKZ.overlay(stage, { title:'DO IT', lines:['The SYSTEM drained the color from the world.', 'You are ' + NAMES[me] + '. Tap the 7 members hiding in the crowd.', 'A wrong tap costs 1 second.'],
+  buttons:[{ label:'Start', primary:true, fn:start }, { label:'Menu', href:'index.html#select', small:true }] });
+
+if(SKZ.debug) window.__dbg = { S, LEVELS };
+})();
+</script>
+  <script src="music.js"></script>
+</body>
+</html>
