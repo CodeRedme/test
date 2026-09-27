@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>THE SPLIT — World 02</title>
+<style>
+  :root{
+    --win-grey:#c0c0c0; --win-dark:#7a7a7a; --win-blue:#000080;
+    --ice:#8fd6ff; --violet:#b98fff;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; height:100%; font-family:"Tahoma","Segoe UI",sans-serif; overflow:hidden; }
+  .desktop{
+    position:relative; width:100%; height:100vh; overflow:hidden;
+    background:
+      radial-gradient(ellipse at 30% 20%, rgba(185,143,255,0.35), transparent 55%),
+      radial-gradient(ellipse at 75% 70%, rgba(143,214,255,0.30), transparent 60%),
+      linear-gradient(180deg,#0c0e22 0%, #171a3a 55%, #23264d 100%);
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  .shard{ position:absolute; background:linear-gradient(160deg, rgba(255,255,255,0.10), rgba(255,255,255,0.02)); border:1px solid rgba(255,255,255,0.12); clip-path:polygon(50% 0%,100% 38%,80% 100%,20% 100%,0% 38%); filter:blur(0.2px); z-index:1; }
+  .mission{
+    position:absolute; top:6%; left:50%; transform:translateX(-50%);
+    font-family: Georgia, serif; font-style:italic; font-weight:bold; font-size:1.7rem; color:#fff;
+    text-shadow: 2px 2px 0 var(--violet), -1px -1px 0 #5a2fb8; letter-spacing:1px; z-index:5; text-align:center; white-space:nowrap;
+  }
+
+  .icons{ position:absolute; top:16px; left:12px; display:flex; flex-direction:column; gap:16px; z-index:5; }
+  .icons.right{ left:auto; right:12px; align-items:flex-end; text-align:right; }
+  .icon{ display:flex; flex-direction:column; align-items:center; width:74px; }
+  .icon-glyph{
+    width:36px; height:36px; border-radius:6px; display:flex; align-items:center; justify-content:center;
+    font-size:18px; margin-bottom:4px; box-shadow:2px 2px 0 rgba(0,0,0,0.25);
+  }
+  .icon-label{ color:white; font-size:10.5px; text-shadow:1px 1px 1px rgba(0,0,0,0.85); line-height:1.2; }
+
+  .win{
+    position:absolute; background:var(--win-grey);
+    border:2px solid #fff; border-right-color:#404040; border-bottom-color:#404040;
+    box-shadow:3px 3px 0 rgba(0,0,0,0.35); font-size:12px; z-index:5;
+  }
+  .titlebar{
+    background:linear-gradient(90deg, #4b1f9e, #8f6bd6); color:white; font-weight:bold;
+    padding:3px 6px; display:flex; justify-content:space-between; align-items:center;
+  }
+  .titlebar .btns span{
+    display:inline-block; width:14px; height:14px; background:var(--win-grey); border:1px solid #404040;
+    text-align:center; line-height:12px; margin-left:2px; color:black; font-size:10px;
+  }
+
+  .gridwin{ top:20%; left:5%; width:300px; }
+  .gs-toolbar{ display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid var(--win-dark); }
+  .gs-counter{ background:#000; color:#ff5ad1; font-family:"Courier New",monospace; font-weight:bold; padding:2px 6px; border-radius:2px; font-size:13px; }
+  .smiley{ width:22px; height:22px; border:2px solid #404040; border-radius:3px; background:#c0c0c0; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+  .mgrid{ display:grid; gap:3px; padding:10px; background:var(--win-dark); }
+  .mcell{
+    aspect-ratio:1; background:#e7e2fb; border-top:2px solid #fff; border-left:2px solid #fff;
+    border-right:2px solid #6f6f6f; border-bottom:2px solid #6f6f6f;
+    display:flex; align-items:center; justify-content:center; font-size:15px; cursor:pointer; user-select:none;
+  }
+  .mcell.hit{ background:#ffd9f4 !important; }
+  .mcell.miss{ background:#ffbcbc !important; }
+  .mcell.frozen{ pointer-events:none; }
+
+  .imwin{ top:18%; right:4%; width:250px; right:104px; }
+  .im-body{ display:flex; gap:8px; padding:8px; }
+  .im-avatar{ width:52px; height:auto; background:#eee; border:1px solid var(--win-dark); overflow:hidden; }
+  .im-avatar img{ width:100%; display:block; image-rendering:pixelated; }
+  .im-name{ font-weight:bold; font-size:11px; margin-bottom:4px; }
+  .im-msg{ background:white; border:1px solid var(--win-dark); border-radius:4px; padding:6px; font-size:11px; line-height:1.4; color:#111; }
+  .im-input{ display:flex; gap:4px; padding:6px 8px 8px; }
+  .im-input input{ flex:1; font-size:11px; border:1px solid var(--win-dark); padding:3px; }
+  .im-input button{ font-size:11px; background:var(--win-grey); border:2px solid #fff; border-right-color:#404040; border-bottom-color:#404040; padding:2px 8px; }
+
+  .sprite{ position:absolute; bottom:6%; left:0; width:90px; z-index:4; will-change:transform; }
+  .sprite img{ width:100%; image-rendering:pixelated; filter:drop-shadow(0 8px 10px rgba(0,0,0,0.35)); }
+  .sprite-inner{ transform-origin:50% 100%; }
+  .sprite.s-lose .sprite-inner{ animation:sfall .55s steps(6) forwards; filter:sepia(1) saturate(4) hue-rotate(-30deg) brightness(.9); }
+  @keyframes sfall{ to{ transform:translateY(-46px) rotate(-82deg); } }
+  .sprite.s-win .sprite-inner{ animation:scheer .5s steps(4) infinite; }
+  @keyframes scheer{ 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-34px); } }
+
+  .taskbar{
+    position:absolute; left:0; right:0; bottom:0; height:40px;
+    background:linear-gradient(180deg,#d4d0c8,#b8b2a4); border-top:2px solid #fff;
+    display:flex; align-items:center; gap:8px; padding:0 8px; z-index:6;
+  }
+  .start{ background:linear-gradient(180deg,#a373f2,#6b2fc9); color:white; font-weight:bold; font-size:12px; padding:6px 14px; border-radius:4px 12px 12px 4px; border:1px solid #3e1a80; }
+  .task-item{ background:var(--win-grey); border:1px solid #fff; border-right-color:#404040; border-bottom-color:#404040; font-size:11px; padding:5px 10px; color:#111; white-space:nowrap; }
+  .task-item.back{ text-decoration:none; font-weight:bold; }
+  .task-item.back:hover{ background:#d9d9d9; }
+  .clock{ margin-left:auto; font-size:11px; color:#111; padding-right:6px; }
+
+  .gs-msg-toast{
+    position:absolute; top:36%; left:50%; transform:translateX(-50%);
+    background:rgba(0,0,0,0.75); color:#fff; padding:8px 18px; border-radius:8px; font-size:0.85rem;
+    opacity:0; transition:opacity 0.3s; pointer-events:none; z-index:20;
+  }
+  .gs-msg-toast.show{ opacity:1; }
+
+  .banner{ position:absolute; inset:0; z-index:40; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; background:rgba(0,0,0,.5); overflow:hidden; }
+  .banner[hidden]{ display:none; }
+  .banner-ribbon{ width:100%; padding:20px 0 16px; background:linear-gradient(90deg,transparent,rgba(0,0,0,.78) 14%,rgba(0,0,0,.78) 86%,transparent); animation:bin .5s steps(6); }
+  @keyframes bin{ from{ transform:scale(1.7); opacity:0; } to{ transform:scale(1); opacity:1; } }
+  .banner-title{ font-family:Georgia,serif; font-style:italic; font-weight:bold; font-size:clamp(2.3rem,9vw,5rem); letter-spacing:3px; }
+  .banner.ok .banner-title{ color:#fff; text-shadow:3px 3px 0 var(--violet), -1px -1px 0 #5a2fb8, 0 0 26px rgba(185,143,255,.7); }
+  .banner.bad .banner-title{ color:#ff5a4a; text-shadow:3px 3px 0 #5a0d0d, 0 0 26px rgba(255,60,40,.7); }
+  .banner-sub{ margin:14px 16px 0; color:#fff; font-size:1.05rem; text-shadow:1px 1px 2px #000; }
+  .banner-btns{ display:flex; gap:10px; margin-top:20px; }
+  .bn-btn{ background:var(--win-grey); border:2px solid #fff; border-right-color:#404040; border-bottom-color:#404040; padding:9px 20px; font-weight:bold; font-size:14px; color:#111; text-decoration:none; cursor:pointer; font-family:inherit; }
+  .bn-btn:hover{ background:#dcdcdc; }
+
+  @media (max-width:700px){
+    .mission{ font-size:1.05rem; top:3%; width:70%; text-align:center; line-height:1.15; white-space:normal; }
+    .gridwin{ top:17%; left:50%; transform:translateX(-50%); }
+    .imwin{ top:63%; right:auto; left:50%; transform:translateX(-50%); width:min(290px,92vw); }
+    .task-item:not(.back){ display:none; }
+  }
+  @media (max-width:700px) and (max-height:720px){ .icons{ display:none; } .imwin{ display:none; } .gridwin{ top:14%; } .mission{ width:90%; } }
+  .confetti i{ position:absolute; top:-20px; width:9px; height:14px; animation:cfall linear forwards; }
+  @keyframes cfall{ to{ transform:translateY(105vh) rotate(720deg); } }
+</style>
+</head>
+<body>
+<div class="desktop" id="desktop">
+  <div class="mission">THE SPLIT — WORLD 02</div>
+
+  <div class="icons">
+    <div class="icon"><div class="icon-glyph" style="background:#8f6bd6;">🪞</div><div class="icon-label">REALITY<br>CHECK.exe</div></div>
+    <div class="icon"><div class="icon-glyph" style="background:#5a7ac9;">🎵</div><div class="icon-label">STATIC-<br>PLAYLIST</div></div>
+  </div>
+  <div class="icons right">
+    <div class="icon"><div class="icon-glyph" style="background:#8C5A7A;">⭐</div><div class="icon-label">SAVE-<br>FILE</div></div>
+    <div class="icon"><div class="icon-glyph" style="background:#5C7A8C;">🗂️</div><div class="icon-label">CAST-<br>SELECT</div></div>
+  </div>
+
+  <div class="win gridwin">
+    <div class="titlebar"><span>THE SPLIT — World 02</span><div class="btns"><span>_</span><span>□</span><span>×</span></div></div>
+    <div class="gs-toolbar">
+      <div class="gs-counter" id="livesCount">❤️ 3</div>
+      <div class="smiley" id="smiley">🙂</div>
+      <div class="gs-counter" id="roundCount">RND 1/6</div>
+    </div>
+    <div class="mgrid" id="mgrid"></div>
+  </div>
+
+  <div class="win imwin">
+    <div class="titlebar"><span>Instant Message — Hyunjin</span><div class="btns"><span>_</span><span>×</span></div></div>
+    <div class="im-body">
+      <div class="im-avatar"><img src="hyunjin.webp" alt="Hyunjin"></div>
+      <div style="flex:1;">
+        <div class="im-name">Hyunjin (The Split)</div>
+        <div class="im-msg" id="imMsg">reality's split in two. only one of these is real — find it before the copy settles in 🌀</div>
+      </div>
+    </div>
+    <div class="im-input">
+      <input type="text" id="imInput" placeholder="type something...">
+      <button id="imSend">Send</button>
+    </div>
+  </div>
+
+  <div class="sprite" id="sprite"><div class="sprite-inner"><img src="hyunjin.webp" alt="Hyunjin"></div></div>
+
+  <div class="gs-msg-toast" id="toast"></div>
+
+  <div class="banner" id="banner" hidden>
+    <div class="banner-ribbon">
+      <div class="banner-title" id="bnTitle">MISSION SUCCESS</div>
+      <div class="banner-sub" id="bnSub">Cleared in 6 rounds.</div>
+    </div>
+    <div class="banner-btns">
+      <button class="bn-btn" id="bnAgain">Play Again</button>
+      <a class="bn-btn" href="world-03-district.html">Next Mission →</a>
+      <a class="bn-btn" id="bnNext" href="story-mode.html">Back to Story Map</a>
+    </div>
+    <div class="confetti" id="confetti"></div>
+  </div>
+
+  <div class="taskbar">
+    <div class="start">Start</div>
+    <a class="task-item back" href="story-mode.html">← Back to Story Map</a>
+    <div class="task-item">THE SPLIT — World 02</div>
+    <div class="clock" id="clock">12:00 PM</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  // decorative glass shards scattered across the desktop
+  const desktop = document.getElementById('desktop');
+  for(let i=0;i<7;i++){
+    const s=document.createElement('div'); s.className='shard';
+    const size = 60 + Math.random()*140;
+    s.style.width = size+'px'; s.style.height=(size*1.15)+'px';
+    s.style.top = (Math.random()*80)+'%'; s.style.left = (Math.random()*92)+'%';
+    s.style.transform = 'rotate('+(Math.random()*40-20)+'deg)';
+    desktop.appendChild(s);
+  }
+
+  const ROUNDS = 6;
+  const DUPLICATE = '🌀', TRUE_SET = ['🪞','💠','🔺','✨'];
+  let round = 0, lives = 3, gameOver = false, roundTimer = null, seconds = 0;
+
+  const mgrid = document.getElementById('mgrid');
+  const livesEl = document.getElementById('livesCount');
+  const roundEl = document.getElementById('roundCount');
+  const smileyEl = document.getElementById('smiley');
+  const imMsg = document.getElementById('imMsg');
+  const toast = document.getElementById('toast');
+  const bannerEl = document.getElementById('banner');
+
+  const HINTS = [
+    "look closely.. the copy never blinks right 🌀",
+    "one of these isn't supposed to be here",
+    "the system can fake almost everything. almost.",
+    "careful, it re-splits if you hesitate",
+    "almost there.. trust your gut, not the pattern",
+    "last one. pick the real world, not the echo"
+  ];
+
+  function showToast(msg){
+    toast.textContent = msg; toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 900);
+  }
+
+  function sizeForRound(r){ return 4 + Math.floor(r/2); } // 4,4,5,5,6,6
+  function timeForRound(r){ return Math.max(2600, 6200 - r*650); }
+
+  function buildRound(){
+    const SIZE = sizeForRound(round);
+    mgrid.style.gridTemplateColumns = 'repeat('+SIZE+',1fr)';
+    mgrid.innerHTML = '';
+    const total = SIZE*SIZE;
+    const trueIndex = Math.floor(Math.random()*total);
+    const trueGlyph = TRUE_SET[Math.floor(Math.random()*TRUE_SET.length)];
+    for(let i=0;i<total;i++){
+      const div = document.createElement('div');
+      div.className = 'mcell';
+      div.textContent = (i===trueIndex) ? trueGlyph : DUPLICATE;
+      div.addEventListener('click', () => handleClick(div, i===trueIndex));
+      mgrid.appendChild(div);
+    }
+    imMsg.textContent = HINTS[round] || 'find the fake reflection.';
+    roundEl.textContent = 'RND '+(round+1)+'/'+ROUNDS;
+    clearTimeout(roundTimer);
+    roundTimer = setTimeout(() => {
+      if(gameOver) return;
+      loseLife('too slow.. the split closed on its own');
+    }, timeForRound(round));
+  }
+
+  function freezeGrid(){
+    document.querySelectorAll('.mcell').forEach(c => c.classList.add('frozen'));
+  }
+
+  function handleClick(el, isFake){
+    if(gameOver) return;
+    clearTimeout(roundTimer);
+    freezeGrid();
+    if(isFake){
+      el.classList.add('hit');
+      showToast('CAUGHT IT');
+      setTimeout(nextRound, 450);
+    } else {
+      el.classList.add('miss');
+      setTimeout(() => loseLife('nope.. that one was just a copy'), 350);
+    }
+  }
+
+  function loseLife(msg){
+    if(gameOver) return;
+    lives--; livesEl.textContent = '❤️ '.repeat(Math.max(lives,0)).trim() || '💔';
+    smileyEl.textContent = '😳';
+    imMsg.textContent = msg;
+    if(lives<=0){ endGame(false); return; }
+    setTimeout(() => { smileyEl.textContent='🙂'; buildRound(); }, 550);
+  }
+
+  function nextRound(){
+    round++;
+    if(round >= ROUNDS){ endGame(true); return; }
+    buildRound();
+  }
+
+  function endGame(won){
+    gameOver = true; clearTimeout(roundTimer);
+    smileyEl.textContent = won ? '😎' : '😵';
+    if(won){ imMsg.textContent = 'the split is sealed. you found the true path ✨'; showToast('MISSION COMPLETE'); }
+    else{ imMsg.textContent = 'the copy fooled you this time.. try again?'; showToast('LEVEL FAILED'); }
+    onEnd(won);
+  }
+
+  function newGame(){
+    gameOver = false; round = 0; lives = 3;
+    livesEl.textContent = '❤️ 3'; smileyEl.textContent = '🙂';
+    onNew(); buildRound();
+  }
+  smileyEl.addEventListener('click', newGame);
+
+  document.getElementById('imSend').addEventListener('click', () => {
+    const val = document.getElementById('imInput').value.trim();
+    if(val){ imMsg.textContent = 'you: ' + val; document.getElementById('imInput').value=''; }
+  });
+
+  function updateClock(){
+    const d=new Date(); let h=d.getHours(); const m=d.getMinutes().toString().padStart(2,'0');
+    const ampm = h>=12?'PM':'AM'; h = h%12 || 12;
+    document.getElementById('clock').textContent = h+':'+m+' '+ampm;
+  }
+  updateClock(); setInterval(updateClock, 30000);
+
+  /* ---------- character patrols while you play ---------- */
+  const spriteEl = document.getElementById('sprite'), spriteImg = spriteEl.querySelector('img');
+  let px = window.innerWidth * 0.42, pdir = 1, pclock = 0, plast = performance.now();
+  function patrol(now){
+    const dt = Math.min(0.05, (now - plast) / 1000); plast = now; pclock += dt;
+    const W = window.innerWidth, sw = spriteEl.offsetWidth, lo = W * 0.03, hi = W - sw - W * 0.03;
+    if(!gameOver){
+      px += pdir * 70 * dt;
+      if(px >= hi){ px = hi; pdir = -1; } else if(px <= lo){ px = lo; pdir = 1; }
+    }
+    px = Math.max(lo, Math.min(hi, px));
+    const bob = gameOver ? 0 : Math.abs(Math.sin(pclock * 9)) * 5;
+    const tilt = gameOver ? 0 : Math.sin(pclock * 9) * 2;
+    spriteEl.style.transform = 'translate(' + px.toFixed(1) + 'px,' + (-bob).toFixed(1) + 'px)';
+    spriteImg.style.transform = 'scaleX(' + pdir + ') rotate(' + tilt.toFixed(1) + 'deg)';
+    requestAnimationFrame(patrol);
+  }
+  requestAnimationFrame(patrol);
+
+  /* ---------- win / lose banner ---------- */
+  let bannerTimer = null;
+  function confetti(){
+    const box = document.getElementById('confetti'); box.innerHTML = '';
+    const colors = ['#b98fff','#8fd6ff','#ff8fc7','#fff','#c9b3ff'];
+    for(let i = 0; i < 36; i++){
+      const c = document.createElement('i');
+      c.style.left = (Math.random() * 100) + '%';
+      c.style.background = colors[i % colors.length];
+      c.style.animationDuration = (2.2 + Math.random() * 2.2) + 's';
+      c.style.animationDelay = (Math.random() * 1.2) + 's';
+      box.appendChild(c);
+    }
+  }
+  function showBanner(won){
+    bannerEl.className = 'banner ' + (won ? 'ok' : 'bad');
+    document.getElementById('bnTitle').textContent = won ? 'MISSION SUCCESS' : 'YOU LOSE';
+    document.getElementById('bnSub').textContent = won
+      ? 'All 6 rounds cleared. Reality holds together again.'
+      : 'The wrong version got through. Try again?';
+    document.getElementById('confetti').innerHTML = '';
+    if(won) confetti();
+    bannerEl.hidden = false;
+    document.getElementById('bnAgain').focus({ preventScroll:true });
+  }
+  function onEnd(won){
+    spriteEl.classList.remove('s-win', 's-lose'); spriteEl.classList.add(won ? 's-win' : 's-lose');
+    clearTimeout(bannerTimer);
+    bannerTimer = setTimeout(() => showBanner(won), won ? 700 : 1100);
+  }
+  function onNew(){
+    clearTimeout(bannerTimer);
+    bannerEl.hidden = true;
+    spriteEl.classList.remove('s-win', 's-lose');
+  }
+  document.getElementById('bnAgain').addEventListener('click', () => newGame());
+
+  newGame();
+})();
+</script>
+  <script src="music.js"></script>
+</body>
+</html>
